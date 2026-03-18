@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Debug Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #f5f5f5;
+        }
+        .debug-panel {
+            background: white;
+            border: 3px solid red;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            margin-bottom: 20px;
+        }
+        .button {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .success { background: #28a745; color: white; }
+        .info { background: #17a2b8; color: white; }
+        .primary { background: #007bff; color: white; }
+        .result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success-result { background: #d4edda; border: 1px solid #c3e6cb; }
+        .error-result { background: #f8d7da; border: 1px solid #f5c6cb; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 300px;
+            font-size: 12px;
+        }
+        .log {
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            max-height: 400px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        .token-status {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Order Debug Tool</h1>
+    
+    <div class="debug-panel">
+        <h2 style="color: red; margin: 0 0 15px 0;">Debug Panel</h2>
+        
+        <div class="token-status">
+            <strong>Authentication Token:</strong> 
+            <span id="token-status">Checking...</span>
+        </div>
+        
+        <div>
+            <button class="button primary" onclick="testAllEndpoints()">Test All Endpoints</button>
+            <button class="button success" onclick="createTestOrder()">Create Test Order + Photos</button>
+            <button class="button info" onclick="inspectExistingOrders()">Inspect Existing Orders</button>
+            <button class="button" onclick="clearLog()">Clear Log</button>
+        </div>
+        
+        <div id="results"></div>
+        
+        <div class="log" id="console-log">
+            Console output will appear here...
+        </div>
+    </div>
+
+    <script>
+        // Redirect console.log to our custom log area
+        const originalLog = console.log;
+        const originalError = console.error;
+        const logDiv = document.getElementById('console-log');
+        
+        function appendLog(message, type = 'log') {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? '#ff6b6b' : '#00ff00';
+            logDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${message}</div>`;
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        console.log = function(...args) {
+            originalLog.apply(console, args);
+            appendLog(args.join(' '), 'log');
+        };
+        
+        console.error = function(...args) {
+            originalError.apply(console, args);
+            appendLog('ERROR: ' + args.join(' '), 'error');
+        };
+
+        // Check token status
+        function updateTokenStatus() {
+            const token = localStorage.getItem('token');
+            const tokenStatus = document.getElementById('token-status');
+            if (token) {
+                tokenStatus.innerHTML = '<span style="color: green;">✅ Present</span>';
+                console.log('🔑 Token found in localStorage');
+            } else {
+                tokenStatus.innerHTML = '<span style="color: red;">❌ Missing</span>';
+                console.log('🔑 No token found in localStorage');
+            }
+        }
+
+        // Test all possible endpoints
+        async function testAllEndpoints() {
+            console.log('🔍 DEBUGGING: Testing all possible endpoints...');
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<h3>Testing endpoints...</h3>';
+            
+            const endpoints = [
+                '/api/admin/orders',
+                '/api/orders', 
+                '/admin/orders',
+                '/orders',
+                '/api/admin/order',
+                '/api/order'
+            ];
+
+            let html = '<h3>Endpoint Test Results:</h3>';
+            
+            for (const endpoint of endpoints) {
+                try {
+                    console.log(`Testing: http://localhost:5000${endpoint}`);
+                    
+                    const response = await fetch(`http://localhost:5000${endpoint}`, {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const orderCount = data.orders ? data.orders.length : (Array.isArray(data) ? data.length : 0);
+                        
+                        console.log(`✅ ${endpoint} SUCCESS - Found ${orderCount} orders:`, data);
+                        
+                        html += `<div class="result success-result">
+                            <strong>✅ ${endpoint}</strong><br>
+                            Status: ${response.status} | Orders: ${orderCount}<br>
+                            <details>
+                                <summary>View Raw Data</summary>
+                                <pre>${JSON.stringify(data, null, 2)}</pre>
+                            </details>
+                        </div>`;
+                        
+                        // If we found orders, analyze their structure
+                        if (data.orders && data.orders.length > 0) {
+                            console.log('📊 Analyzing order structure...');
+                            data.orders.forEach((order, index) => {
+                                console.log(`📦 Order ${index + 1}:`, order);
+                                if (order.items) {
+                                    order.items.forEach((item, itemIndex) => {
+                                        console.log(`   📄 Item ${itemIndex + 1}:`, item);
+                                        console.log(`      Product: ${item.productName || item.name || 'Unknown'}`);
+                                        console.log(`      Photos in referencePhotos:`, item.referencePhotos);
+                                        console.log(`      All item fields:`, Object.keys(item));
+                                    });
+                                }
+                            });
+                        }
+                    } else {
+                        console.log(`❌ ${endpoint} FAILED: ${response.status}`);
+                        html += `<div class="result error-result">
+                            <strong>❌ ${endpoint}</strong><br>
+                            Status: ${response.status} | Error: HTTP ${response.status}
+                        </div>`;
+                    }
+                } catch (error) {
+                    console.log(`❌ ${endpoint} ERROR:`, error.message);
+                    html += `<div class="result error-result">
+                        <strong>❌ ${endpoint}</strong><br>
+                        Error: ${error.message}
+                    </div>`;
+                }
+            }
+
+            // Test backend health
+            try {
+                const healthResponse = await fetch('http://localhost:5000/api/health');
+                if (healthResponse.ok) {
+                    const healthData = await healthResponse.json();
+                    console.log('✅ Backend health check passed:', healthData);
+                    html += `<div class="result success-result">
+                        <strong>✅ Backend Health</strong><br>
+                        Status: ${healthResponse.status} | Backend is running
+                    </div>`;
+                } else {
+                    console.log('❌ Backend health check failed');
+                    html += `<div class="result error-result">
+                        <strong>❌ Backend Health</strong><br>
+                        Backend may not be running
+                    </div>`;
+                }
+            } catch (error) {
+                console.log('❌ Backend not responding:', error.message);
+                html += `<div class="result error-result">
+                    <strong>❌ Backend Health</strong><br>
+                    Backend not responding: ${error.message}
+                </div>`;
+            }
+            
+            resultsDiv.innerHTML = html;
+        }
+
+        // Create test order with photos
+        async function createTestOrder() {
+            console.log('🧪 Creating test order with photos...');
+            
+            const formData = new FormData();
+            
+            // Add customer info
+            formData.append('customerInfo', JSON.stringify({
+                name: 'Debug Test Customer',
+                email: 'debug@test.com',
+                phone: '9876543210',
+                address: 'Debug Test Address'
+            }));
+            
+            // Add order items
+            formData.append('items', JSON.stringify([
+                {
+                    product: '507f1f77bcf86cd799439011',
+                    productName: 'Debug Birthday Frame',
+                    quantity: 1,
+                    price: 250,
+                    subtotal: 250,
+                    specialRequest: 'Debug test with photos - multiple images'
+                }
+            ]));
+            
+            formData.append('totalAmount', '250');
+            
+            // Create multiple mock files for testing
+            for (let i = 0; i < 3; i++) {
+                const blob = new Blob([`fake image data ${i + 1}`], { type: 'image/jpeg' });
+                const file = new File([blob], `debug-test-photo-${i + 1}.jpg`, { type: 'image/jpeg' });
+                formData.append('referencePhotos', file);
+            }
+            
+            console.log('📤 Sending test order with FormData...');
+            
+            try {
+                const response = await fetch('http://localhost:5000/api/orders', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    console.log('✅ Test order created successfully:', result);
+                    alert('✅ Test order created! Check the console and refresh endpoints.');
+                    testAllEndpoints(); // Refresh
+                } else {
+                    const errorText = await response.text();
+                    console.error('❌ Failed to create test order:', response.status, errorText);
+                    alert('❌ Failed to create test order. Check console for details.');
+                }
+            } catch (error) {
+                console.error('❌ Error creating test order:', error);
+                alert('❌ Error: ' + error.message);
+            }
+        }
+
+        // Inspect existing orders
+        async function inspectExistingOrders() {
+            console.log('🔍 Inspecting existing orders in database...');
+            
+            // Try to find orders using different endpoints
+            const endpoints = ['/api/admin/orders', '/api/orders'];
+            
+            for (const endpoint of endpoints) {
+                try {
+                    const response = await fetch(`http://localhost:5000${endpoint}`, {
+                        headers: {
+                            'Authorization': `Bearer ${localStorage.getItem('token')}`,
+                            'Content-Type': 'application/json'
+                        }
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        console.log(`✅ Orders from ${endpoint}:`, data);
+                        
+                        if (data.orders && data.orders.length > 0) {
+                            console.log('📊 DETAILED ORDER ANALYSIS:');
+                            data.orders.forEach((order, orderIndex) => {
+                                console.log(`\n📦 ORDER ${orderIndex + 1}: ${order.orderNumber || order._id}`);
+                                console.log(`   Customer: ${order.customer?.name || 'Unknown'}`);
+                                console.log(`   Status: ${order.status}`);
+                                console.log(`   Total: ${order.totalAmount}`);
+                                console.log(`   Items: ${order.items?.length || 0}`);
+                                
+                                if (order.items) {
+                                    order.items.forEach((item, itemIndex) => {
+                                        console.log(`\n   📄 ITEM ${itemIndex + 1}:`);
+                                        console.log(`      Product: ${item.productName || item.name}`);
+                                        console.log(`      Special Request: ${item.specialRequest || 'None'}`);
+                                        console.log(`      Reference Photos: ${item.referencePhotos ? item.referencePhotos.length : 0}`);
+                                        
+                                        if (item.referencePhotos && item.referencePhotos.length > 0) {
+                                            console.log(`      🖼️ PHOTOS FOUND:`, item.referencePhotos);
+                                            item.referencePhotos.forEach((photo, photoIndex) => {
+                                                console.log(`         Photo ${photoIndex + 1}: ${photo.originalName || photo.filename}`);
+                                                console.log(`         Path: ${photo.path}`);
+                                                console.log(`         Size: ${photo.size} bytes`);
+                                            });
+                                        }
+                                        
+                                        console.log(`      All item fields:`, Object.keys(item));
+                                    });
+                                }
+                            });
+                            break; // Found orders, no need to try other endpoints
+                        }
+                    }
+                } catch (error) {
+                    console.log(`❌ Error with ${endpoint}:`, error.message);
+                }
+            }
+        }
+
+        function clearLog() {
+            document.getElementById('console-log').innerHTML = 'Console cleared...';
+        }
+
+        // Initialize
+        updateTokenStatus();
+        console.log('🚀 Order Debug Tool loaded');
+        console.log('🔧 Click buttons above to test the orders system');
+        
+        // Auto-test endpoints on load
+        setTimeout(() => {
+            console.log('🔄 Auto-testing endpoints...');
+            testAllEndpoints();
+        }, 1000);
+    </script>
+</body>
+</html>

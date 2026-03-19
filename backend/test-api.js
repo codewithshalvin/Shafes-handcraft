@@ -5,7 +5,8 @@ const testAPI = async () => {
     console.log('🧪 Testing ShafesChannel API...\n');
 
     // Test health endpoint
-    const healthResponse = await fetch('http://localhost:5000/api/health');
+// Change this line:
+    const healthResponse = await fetch('https://handcraft-hpi2.onrender.com/api/health');    
     const healthData = await healthResponse.json();
     console.log('✅ Health Check:', healthData);
 
